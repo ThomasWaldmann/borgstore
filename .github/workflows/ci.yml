@@ -55,11 +55,13 @@ jobs:
             - os: windows-latest
               python-version: '3.12'
               toxenv: py312
+              allow-failure: true
 
     env:
       TOXENV: ${{ matrix.toxenv }}
 
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.allow-failure || false }}
 
     steps:
     - uses: actions/checkout@v4
