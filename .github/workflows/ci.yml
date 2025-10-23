@@ -53,8 +53,8 @@ jobs:
               python-version: '3.12'
               toxenv: py312
             - os: windows-latest
-              python-version: '3.12'
-              toxenv: py312
+              python-version: '3.11'
+              toxenv: py311
               allow-failure: true
 
     env:
