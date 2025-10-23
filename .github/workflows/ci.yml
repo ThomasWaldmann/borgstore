@@ -150,12 +150,10 @@ jobs:
       run: pip install -ve .
     - name: run tox envs (Linux)
       if: runner.os == 'Linux'
-      run: |
-        tox -e all_extras
+      run: tox -e all_extras
     - name: run tox envs (Windows)
       if: runner.os == 'Windows'
       run: tox -e ${{ matrix.toxenv }}
     - name: run tox envs (macOS)
       if: runner.os == 'macOS'
       run: tox -e ${{ matrix.toxenv }}
-
