@@ -52,6 +52,9 @@ jobs:
             - os: ubuntu-24.04
               python-version: '3.13'
               toxenv: py313
+            - os: macos-latest
+              python-version: '3.12'
+              toxenv: py312
             - os: windows-latest
               python-version: '3.12'
               toxenv: py312
@@ -142,11 +145,17 @@ jobs:
     - name: Install borgstore (no extras)
       if: runner.os == 'Windows'
       run: pip install -ve .
+    - name: Install borgstore (no extras)
+      if: runner.os == 'macOS'
+      run: pip install -ve .
     - name: run tox envs (Linux)
       if: runner.os == 'Linux'
       run: |
         tox -e all_extras
     - name: run tox envs (Windows)
       if: runner.os == 'Windows'
+      run: tox -e ${{ matrix.toxenv }}
+    - name: run tox envs (macOS)
+      if: runner.os == 'macOS'
       run: tox -e ${{ matrix.toxenv }}
 
