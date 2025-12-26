@@ -1,7 +1,7 @@
 Changelog
 =========
 
-Version x.x.x (not released yet)
+Version 0.3.1 (not released yet)
 --------------------------------
 
 Bug fixes:
@@ -10,7 +10,8 @@ Bug fixes:
 
 Other changes:
 
-- use a spdx license expression to avoid pip warnings
+- add support for Python 3.14, remove 3.9
+- use SPDX license identifier, require a recent setuptools
 - CI:
 
   - add sftp store testing, #64
