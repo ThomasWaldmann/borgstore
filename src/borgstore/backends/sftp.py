@@ -21,6 +21,14 @@ from ..constants import TMP_SUFFIX
 
 def get_sftp_backend(url):
     """Get SFTP backend from URL."""
+
+    if not url.startswith("sftp:"):
+        return None
+
+    if paramiko is None:
+        raise BackendDoesNotExist("The SFTP backend requires dependencies. Install them with: 'pip install borgstore[sftp]'")
+
+
     # sftp://username@hostname:22/path
     # Notes:
     # - username and port are optional
@@ -34,10 +42,9 @@ def get_sftp_backend(url):
         (?P<hostname>([^:/]+))(?::(?P<port>\d+))?/  # slash as separator, not part of the path
         (?P<path>(.+))  # path may or may not start with a slash, must not be empty
     """
-    if paramiko is not None:
-        m = re.match(sftp_regex, url, re.VERBOSE)
-        if m:
-            return Sftp(username=m["username"], hostname=m["hostname"], port=int(m["port"] or "0"), path=m["path"])
+    m = re.match(sftp_regex, url, re.VERBOSE)
+    if m:
+        return Sftp(username=m["username"], hostname=m["hostname"], port=int(m["port"] or "0"), path=m["path"])
 
 
 class Sftp(BackendBase):
