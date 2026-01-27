@@ -52,7 +52,7 @@ class PosixFS(BackendBase):
     def __init__(self, path, *, do_fsync=False, permissions=None):
         self.base_path = Path(path)
         if not self.base_path.is_absolute():
-            raise BackendError("path must be an absolute path")
+            raise BackendError(f"path must be an absolute path: {path}")
         self.opened = False
         self.do_fsync = do_fsync  # False = 26x faster, see #10
         self.permissions = permissions or {}  # name [str] -> granted_permissions [str]
