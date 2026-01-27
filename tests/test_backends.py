@@ -88,6 +88,7 @@ def check_rclone_available():
         be.destroy()
         return True
 
+
 def get_s3_test_backend():
     # export BORGSTORE_TEST_S3_URL="s3:[profile|(access_key_id:access_key_secret)@][schema://hostname[:port]]/bucket/path"
     # export BORGSTORE_TEST_S3_URL="s3:/test/path"
@@ -111,6 +112,7 @@ def check_s3_available():
     else:
         be.destroy()
         return True
+
 
 sftp_is_available = check_sftp_available()
 rclone_is_available = check_rclone_available()
@@ -165,9 +167,11 @@ def get_backend_from_fixture(tested_backends, request):
     return request.getfixturevalue(tested_backends)
 
 
-@pytest.mark.parametrize(
-    "url,path", [("file:///absolute/path", "/absolute/path")]  # first 2 slashes are to introduce host (empty here)
-)
+POSIX_ABS_TESTCASES = [("file:///absolute/path", "/absolute/path")]
+WINDOWS_ABS_TESTCASES = [("file:///C:/absolute/path", "C:/absolute/path")]
+
+
+@pytest.mark.parametrize("url,path", WINDOWS_ABS_TESTCASES if os.name == "nt" else POSIX_ABS_TESTCASES)
 def test_file_url(url, path):
     backend = get_file_backend(url)
     assert isinstance(backend, PosixFS)
