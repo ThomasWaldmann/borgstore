@@ -11,6 +11,8 @@ Bug fixes:
 Other changes:
 
 - add support for Python 3.14, remove 3.9
+- backends: have separate exceptions for invalid url and dependency missing
+- posixfs: better exception msg if not absolute path
 - use SPDX license identifier, require a recent setuptools
 - CI:
 
