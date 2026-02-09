@@ -1,6 +1,7 @@
 """
 BorgStore backend for S3-compatible services (including Backblaze B2) using boto3.
 """
+
 try:
     import boto3
     from botocore.client import Config
@@ -29,7 +30,9 @@ def get_s3_backend(url: str):
         return None
 
     if boto3 is None:
-        raise BackendDoesNotExist("The S3 backend requires dependencies. Install them with: 'pip install borgstore[s3]'")
+        raise BackendDoesNotExist(
+            "The S3 backend requires dependencies. Install them with: 'pip install borgstore[s3]'"
+        )
 
     # (s3|b2):[profile|(access_key_id:access_key_secret)@][schema://hostname[:port]]/bucket/path
     s3_regex = r"""
@@ -73,18 +76,31 @@ def get_s3_backend(url: str):
             endpoint_url = f"{schema}://{hostname}"
             if port:
                 endpoint_url += f":{port}"
-        return S3(bucket=bucket, path=path, is_b2=s3type == "b2", profile=profile,
-                  access_key_id=access_key_id, access_key_secret=access_key_secret,
-                  endpoint_url=endpoint_url)
+        return S3(
+            bucket=bucket,
+            path=path,
+            is_b2=s3type == "b2",
+            profile=profile,
+            access_key_id=access_key_id,
+            access_key_secret=access_key_secret,
+            endpoint_url=endpoint_url,
+        )
 
 
 class S3(BackendBase):
     """BorgStore backend for S3 and Backblaze B2 (via boto3)."""
 
-    def __init__(self, bucket: str, path: str, is_b2: bool, profile: Optional[str] = None,
-                 access_key_id: Optional[str] = None, access_key_secret: Optional[str] = None,
-                 endpoint_url: Optional[str] = None):
-        self.delimiter = '/'
+    def __init__(
+        self,
+        bucket: str,
+        path: str,
+        is_b2: bool,
+        profile: Optional[str] = None,
+        access_key_id: Optional[str] = None,
+        access_key_secret: Optional[str] = None,
+        endpoint_url: Optional[str] = None,
+    ):
+        self.delimiter = "/"
         self.bucket = bucket
         self.base_path = path.rstrip(self.delimiter) + self.delimiter  # Ensure it ends with '/'
         self.opened = False
@@ -96,14 +112,11 @@ class S3(BackendBase):
             session = boto3.Session()
         config = None
         if is_b2:
-            config = Config(
-                request_checksum_calculation="when_required",
-                response_checksum_validation="when_required",
-            )
+            config = Config(request_checksum_calculation="when_required", response_checksum_validation="when_required")
         self.s3 = session.client("s3", endpoint_url=endpoint_url, config=config)
         if is_b2:
             event_system = self.s3.meta.events
-            event_system.register_first('before-sign.*.*', self._fix_headers)
+            event_system.register_first("before-sign.*.*", self._fix_headers)
 
     def _fix_headers(self, request, **kwargs):
         if "x-amz-checksum-crc32" in request.headers:
@@ -122,8 +135,9 @@ class S3(BackendBase):
         if self.opened:
             raise BackendMustNotBeOpen()
         try:
-            objects = self.s3.list_objects_v2(Bucket=self.bucket, Prefix=self.base_path,
-                                              Delimiter=self.delimiter, MaxKeys=1)
+            objects = self.s3.list_objects_v2(
+                Bucket=self.bucket, Prefix=self.base_path, Delimiter=self.delimiter, MaxKeys=1
+            )
             if objects["KeyCount"] > 0:
                 raise BackendAlreadyExists(f"Backend already exists: {self.base_path}")
             self._mkdir("")
@@ -136,18 +150,18 @@ class S3(BackendBase):
         if self.opened:
             raise BackendMustNotBeOpen()
         try:
-            objects = self.s3.list_objects_v2(Bucket=self.bucket, Prefix=self.base_path,
-                                              Delimiter=self.delimiter, MaxKeys=1)
+            objects = self.s3.list_objects_v2(
+                Bucket=self.bucket, Prefix=self.base_path, Delimiter=self.delimiter, MaxKeys=1
+            )
             if objects["KeyCount"] == 0:
                 raise BackendDoesNotExist(f"Backend does not exist: {self.base_path}")
             is_truncated = True
             while is_truncated:
                 objects = self.s3.list_objects_v2(Bucket=self.bucket, Prefix=self.base_path, MaxKeys=1000)
-                is_truncated = objects['IsTruncated']
+                is_truncated = objects["IsTruncated"]
                 if "Contents" in objects:
                     self.s3.delete_objects(
-                        Bucket=self.bucket,
-                        Delete={"Objects": [{"Key": obj["Key"]} for obj in objects["Contents"]]}
+                        Bucket=self.bucket, Delete={"Objects": [{"Key": obj["Key"]} for obj in objects["Contents"]]}
                     )
         except self.s3.exceptions.ClientError as e:
             raise BackendError(f"S3 error: {e}")
@@ -203,7 +217,7 @@ class S3(BackendBase):
         except self.s3.exceptions.NoSuchKey:
             raise ObjectNotFound(name)
         except self.s3.exceptions.ClientError as e:
-            if e.response['Error']['Code'] == '404':
+            if e.response["Error"]["Code"] == "404":
                 raise ObjectNotFound(name)
 
     def move(self, curr_name, new_name):
@@ -225,16 +239,21 @@ class S3(BackendBase):
         validate_name(name)
         base_prefix = (self.base_path + name).rstrip(self.delimiter) + self.delimiter
         try:
-            start_after = ''
+            start_after = ""
             is_truncated = True
             while is_truncated:
-                objects = self.s3.list_objects_v2(Bucket=self.bucket, Prefix=base_prefix,
-                                                  Delimiter=self.delimiter, MaxKeys=1000, StartAfter=start_after)
-                if objects['KeyCount'] == 0:
+                objects = self.s3.list_objects_v2(
+                    Bucket=self.bucket,
+                    Prefix=base_prefix,
+                    Delimiter=self.delimiter,
+                    MaxKeys=1000,
+                    StartAfter=start_after,
+                )
+                if objects["KeyCount"] == 0:
                     raise ObjectNotFound(name)
                 is_truncated = objects["IsTruncated"]
                 for obj in objects.get("Contents", []):
-                    obj_name = obj["Key"][len(base_prefix):]  # Remove base_path prefix
+                    obj_name = obj["Key"][len(base_prefix) :]  # Remove base_path prefix
                     if obj_name == "":
                         continue
                     if obj_name.endswith(TMP_SUFFIX):
@@ -242,7 +261,7 @@ class S3(BackendBase):
                     start_after = obj["Key"]
                     yield ItemInfo(name=obj_name, exists=True, size=obj["Size"], directory=False)
                 for prefix in objects.get("CommonPrefixes", []):
-                    dir_name = prefix["Prefix"][len(base_prefix):-1]  # Remove base_path prefix and trailing slash
+                    dir_name = prefix["Prefix"][len(base_prefix) : -1]  # Remove base_path prefix and trailing slash
                     yield ItemInfo(name=dir_name, exists=True, size=0, directory=True)
         except self.s3.exceptions.ClientError as e:
             raise BackendError(f"S3 error: {e}")
@@ -272,7 +291,7 @@ class S3(BackendBase):
             obj = self.s3.head_object(Bucket=self.bucket, Key=key)
             return ItemInfo(name=name, exists=True, directory=False, size=obj["ContentLength"])
         except self.s3.exceptions.ClientError as e:
-            if e.response['Error']['Code'] == '404':
+            if e.response["Error"]["Code"] == "404":
                 try:
                     self.s3.head_object(Bucket=self.bucket, Key=key + self.delimiter)
                     return ItemInfo(name=name, exists=True, directory=True, size=0)

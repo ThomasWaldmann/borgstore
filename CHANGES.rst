@@ -1,8 +1,8 @@
 Changelog
 =========
 
-Version 0.3.1 (not released yet)
---------------------------------
+Version 0.3.1 (2026-02-09)
+--------------------------
 
 Bug fixes:
 
@@ -11,8 +11,8 @@ Bug fixes:
 Other changes:
 
 - add support for Python 3.14, remove 3.9
-- backends: have separate exceptions for invalid url and dependency missing
-- posixfs: better exception msg if not absolute path
+- backends: have separate exceptions for invalid URL and dependency missing
+- posixfs: better exception message if not absolute path
 - use SPDX license identifier, require a recent setuptools
 - CI:
 
@@ -58,7 +58,7 @@ Breaking changes:
 New features:
 
 - new s3/b2 backend that uses the boto3 library, #96
-- posixfs/sftp: create missing parent dirs of the base path
+- posixfs/sftp: create missing parent directories of the base path
 - rclone: add a way to specify the path to the rclone binary for custom installations
 
 Bug fixes:
@@ -84,7 +84,7 @@ Breaking changes:
 
 Other changes:
 
-- sftp/posixfs backends: remove ad-hoc mkdir calls, #46
+- sftp/posixfs backends: remove ad hoc mkdir calls, #46
 - optimize Sftp._mkdir, #80
 - sftp backend is now optional, avoiding dependency issues on some platforms, #74.
   Use pip install "borgstore[sftp]" to install with the sftp backend.
