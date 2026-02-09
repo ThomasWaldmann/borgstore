@@ -45,6 +45,7 @@ def rclone_store_created():
     finally:
         store.destroy()
 
+
 @pytest.fixture()
 def s3_store_created():
     store = Store(backend=get_s3_test_backend(), levels=LEVELS_CONFIG)

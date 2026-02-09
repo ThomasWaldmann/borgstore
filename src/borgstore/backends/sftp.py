@@ -26,8 +26,9 @@ def get_sftp_backend(url):
         return None
 
     if paramiko is None:
-        raise BackendDoesNotExist("The SFTP backend requires dependencies. Install them with: 'pip install borgstore[sftp]'")
-
+        raise BackendDoesNotExist(
+            "The SFTP backend requires dependencies. Install them with: 'pip install borgstore[sftp]'"
+        )
 
     # sftp://username@hostname:22/path
     # Notes:
@@ -49,6 +50,7 @@ def get_sftp_backend(url):
 
 class Sftp(BackendBase):
     """BorgStore backend for SFTP."""
+
     # Sftp implementation supports precreate = True as well as = False.
     precreate_dirs: bool = False
 
