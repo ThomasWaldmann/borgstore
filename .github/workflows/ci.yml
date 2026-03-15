@@ -138,13 +138,13 @@ jobs:
         pip install -r requirements.d/dev.txt
     - name: Install borgstore (with all extras)
       if: runner.os == 'Linux'
-      run: pip install -ve ".[s3,sftp]"
+      run: pip install -ve ".[s3,sftp,rest,rclone]"
     - name: Install borgstore (no extras)
       if: runner.os == 'Windows'
-      run: pip install -ve .
+      run: pip install -ve ".[none]"
     - name: Install borgstore (no extras)
       if: runner.os == 'macOS'
-      run: pip install -ve .
+      run: pip install -ve ".[none]"
     - name: run tox envs (Linux)
       if: runner.os == 'Linux'
       run: tox -e all_extras
