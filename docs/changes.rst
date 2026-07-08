@@ -1,6 +1,14 @@
 Changelog
 =========
 
+Version 0.5.4 (not released yet)
+--------------------------------
+
+Fixes:
+
+- Spawn rclone and ssh ignoring SIGINT, so they don't get interrupted by Ctrl-C.
+
+
 Version 0.5.3 (2026-06-30)
 --------------------------
 

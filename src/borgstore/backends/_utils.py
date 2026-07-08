@@ -2,6 +2,8 @@
 Utilities for backend implementations.
 """
 
+import signal
+import sys
 from typing import Tuple, Optional
 
 
@@ -57,3 +59,21 @@ def parse_range_header(range_header: str) -> Tuple[int, Optional[int]]:
         pass
 
     return 0, None
+
+
+is_win32 = sys.platform in ("win32", "msys", "cygwin")
+
+
+if not is_win32:
+
+    def ignore_sigint():
+        # SIGINT (Ctrl-C) is usually used by the user to interrupt the main process.
+        # Problem: the signal is usually sent to all processes in the process group,
+        # but we must not terminate subprocesses which are essential for operations
+        # and a clean shutdown of the main process.
+        # This function can be used in Popen(...,  preexec_fn=ignore_sigint) to let
+        # the subprocess ignore SIGINT. Not supported on Windows.
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+else:
+    ignore_sigint = None
