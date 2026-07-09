@@ -207,3 +207,23 @@ def test_stdio_request_broken_pipe_raises_connection_error():
 
     with pytest.raises(BackendConnectionError):
         session.request("GET", "http://stdio-backend/item")
+
+
+def test_stdio_request_eof_during_headers_raises_connection_error():
+    """Unexpected EOF while reading headers is reported as a connection error."""
+    session = StdioSession(command=["true"])
+    session.process = _FakeProc(stdout_data=b"HTTP/1.1 200 OK\r\nContent-Length: 10\r\n")
+
+    with pytest.raises(BackendConnectionError) as exc_info:
+        session.request("GET", "http://stdio-backend/item")
+    assert "reading headers" in str(exc_info.value)
+
+
+def test_stdio_request_eof_during_body_raises_connection_error():
+    """Unexpected EOF while reading body (shorter than Content-Length) is reported as a connection error."""
+    session = StdioSession(command=["true"])
+    session.process = _FakeProc(stdout_data=b"HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\n123")
+
+    with pytest.raises(BackendConnectionError) as exc_info:
+        session.request("GET", "http://stdio-backend/item")
+    assert "reading response body" in str(exc_info.value)
