@@ -7,6 +7,10 @@ class BackendError(Exception):
     """Base class for exceptions in this module."""
 
 
+class BackendConnectionError(BackendError):
+    """Raised when the connection to the backend was lost. This may be recoverable by reconnecting."""
+
+
 class BackendURLInvalid(BackendError):
     """Raised when trying to create a store using an invalid backend URL."""
 
