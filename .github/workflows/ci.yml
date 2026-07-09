@@ -64,7 +64,7 @@ jobs:
     continue-on-error: ${{ matrix.allow-failure || false }}
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         # just fetching 1 commit is not enough for setuptools-scm, so we fetch all
         fetch-depth: 0
@@ -193,7 +193,7 @@ jobs:
         echo "BORGSTORE_TEST_REST1_URL=http://testuser:testpass@localhost/repos/repo1/" >> $GITHUB_ENV
         echo "BORGSTORE_TEST_REST2_URL=http://testuser:testpass@localhost/repos/repo2/" >> $GITHUB_ENV
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install Python requirements
