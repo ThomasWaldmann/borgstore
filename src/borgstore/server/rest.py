@@ -22,6 +22,7 @@ from ..backends.errors import (
     BackendError,
     BackendMustBeOpen,
     BackendMustNotBeOpen,
+    ReadRangeError,
 )
 from ..backends._utils import parse_range_header
 from ..store import get_backend
@@ -153,6 +154,8 @@ class BorgStoreRESTRequestHandler(BaseHTTPRequestHandler):
             self.send_error(HTTP.FORBIDDEN, msg)
         elif isinstance(e, QuotaExceeded):
             self.send_error(HTTP.INSUFFICIENT_STORAGE, msg)
+        elif isinstance(e, ReadRangeError):
+            self.send_error(HTTP.REQUESTED_RANGE_NOT_SATISFIABLE, msg)
         elif isinstance(e, (ValueError, TypeError)):
             self.send_error(HTTP.BAD_REQUEST, msg)
             logger.exception("Exception for %s", name or self.path)

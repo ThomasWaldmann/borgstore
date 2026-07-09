@@ -13,7 +13,7 @@ from .test_backends import get_rclone_test_backend, rclone_is_available  # noqa
 from .test_backends import get_s3_test_backend, s3_is_available  # noqa
 
 from borgstore.constants import ROOTNS
-from borgstore.store import Store, ItemInfo
+from borgstore.store import Store, ItemInfo, ReadRangeError
 
 CONFIG = {"zero/": {"levels": [0]}, "one/": {"levels": [1]}, "two/": {"levels": [2]}}  # Layout used for most tests
 
@@ -120,6 +120,12 @@ def test_defrag_nested(posixfs_store_created):
         expected_hash = hashlib.sha256(expected_data).hexdigest()
         assert res == expected_hash
         assert store.load(ns + "/" + res) == expected_data
+
+        # 3. Test defrag with short read
+        with pytest.raises(ReadRangeError) as exc_info:
+            store.defrag([("file1", 2, 20)], target="target2", namespace=ns)
+        assert "Read range error from" in str(exc_info.value)
+        assert "requested 20 bytes" in str(exc_info.value)
 
 
 def test_hash(posixfs_store_created):

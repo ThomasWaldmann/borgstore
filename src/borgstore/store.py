@@ -20,7 +20,7 @@ from typing import Iterator, NamedTuple, Optional
 
 from .utils.nesting import nest, unnest
 from .backends._base import ItemInfo, BackendBase
-from .backends.errors import ObjectNotFound, NoBackendGiven, BackendURLInvalid  # noqa
+from .backends.errors import ObjectNotFound, NoBackendGiven, BackendURLInvalid, ReadRangeError  # noqa
 from .backends.posixfs import get_file_backend
 from .backends.rclone import get_rclone_backend
 from .backends.sftp import get_sftp_backend

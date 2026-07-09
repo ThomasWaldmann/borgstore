@@ -45,3 +45,7 @@ class PermissionDenied(BackendError):
 
 class QuotaExceeded(BackendError):
     """Quota exceeded for the requested operation."""
+
+
+class ReadRangeError(BackendError):
+    """Read range error occurred (e.g. short read)."""

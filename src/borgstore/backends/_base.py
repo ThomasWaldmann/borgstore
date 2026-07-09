@@ -131,8 +131,17 @@ class BackendBase(ABC):
         # default implementation: slow, but works for all backends.
         # might be overridden for performance.
         from ..utils.nesting import nest
+        from .errors import ReadRangeError
 
-        data = b"".join(self.load(source, offset=offset, size=size) for source, offset, size in sources)
+        data_parts = []
+        for source, offset, size in sources:
+            chunk = self.load(source, offset=offset, size=size)
+            if len(chunk) != size:
+                raise ReadRangeError(
+                    f"Read range error from {source} (requested {size} bytes at offset {offset}, got {len(chunk)})"
+                )
+            data_parts.append(chunk)
+        data = b"".join(data_parts)
         if target is None:
             if algorithm is None:
                 raise ValueError("Either target or algorithm must be given for defrag")

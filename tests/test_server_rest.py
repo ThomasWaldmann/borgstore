@@ -14,7 +14,7 @@ from borgstore.constants import DEL_SUFFIX
 from borgstore.server.rest import BorgStoreRESTServer
 from borgstore.backends.rest import get_rest_backend
 from borgstore.backends.posixfs import get_file_backend
-from borgstore.backends.errors import ObjectNotFound, BackendAlreadyExists, QuotaExceeded
+from borgstore.backends.errors import ObjectNotFound, BackendAlreadyExists, QuotaExceeded, ReadRangeError
 from borgstore.store import get_backend, Store
 
 
@@ -421,6 +421,12 @@ def test_rest_backend_defrag(rest_server_with_auth):
         # Test error: unsupported algorithm
         with pytest.raises(ValueError, match="Unsupported hash algorithm"):
             be.defrag(sources, algorithm="invalid")
+
+        # Test error: short read
+        with pytest.raises(ReadRangeError) as exc_info:
+            be.defrag([("file1", 2, 20)], target="target2")
+        assert "Read range error from" in str(exc_info.value)
+        assert "requested 20 bytes" in str(exc_info.value)
 
         # Test defrag with levels=1 and algorithm
         from borgstore.utils.nesting import nest
