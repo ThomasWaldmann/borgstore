@@ -267,7 +267,18 @@ class StdioSession:
                 response_headers[key.strip()] = value.strip()
 
         content_length = int(response_headers.get("Content-Length", "0"))
-        response_body = self.process.stdout.read(content_length) if method.upper() != "HEAD" and content_length else b""
+        response_body = b""
+        if method.upper() != "HEAD" and content_length > 0:
+            response_body = self.process.stdout.read(content_length)
+            if len(response_body) < content_length:
+                if self._stderr_thread is not None:
+                    self._stderr_thread.join(timeout=0.5)
+                stderr_tail = "\n".join(self._stderr_lines)
+                detail = f":\n{stderr_tail}" if stderr_tail else ""
+                raise BackendConnectionError(
+                    f"stdio server closed connection unexpectedly while reading response body: "
+                    f"expected {content_length} bytes, got {len(response_body)}{detail}"
+                )
 
         response = requests.Response()
         response.status_code = status_code
