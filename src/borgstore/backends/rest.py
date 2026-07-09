@@ -3,6 +3,7 @@ REST http client based backend implementation (use with borgstore.server.rest).
 """
 
 import collections
+import functools
 import os
 import re
 import shlex
@@ -11,6 +12,7 @@ import logging
 import hashlib
 import threading
 import subprocess
+import time
 from typing import Iterator, Dict, Optional
 from types import ModuleType
 from http import HTTPStatus as HTTP
@@ -32,6 +34,7 @@ from ._utils import make_range_header, ignore_sigint
 from .errors import (
     ObjectNotFound,
     BackendAlreadyExists,
+    BackendConnectionError,
     BackendDoesNotExist,
     PermissionDenied,
     QuotaExceeded,
@@ -41,6 +44,91 @@ from .errors import (
 )
 
 logger = logging.getLogger(__name__)
+
+# ssh keepalive: make ssh notice a dead peer and terminate (which closes the stdio pipe and unblocks
+# our reads) instead of us blocking forever on a read from a connection that will never answer.
+# ssh gives up after roughly SSH_ALIVE_INTERVAL * SSH_ALIVE_COUNT_MAX seconds of silence.
+SSH_ALIVE_INTERVAL = 30
+SSH_ALIVE_COUNT_MAX = 3
+# When the connection was lost, try this many times to reconnect and redo the failed operation.
+DEFAULT_RECONNECT_TRIES = 3
+# Wait this long (seconds) between reconnect attempts.
+DEFAULT_RECONNECT_WAIT = 5.0
+
+
+def _is_connection_lost(exc: BaseException) -> bool:
+    """Return True if exc indicates a broken/dead connection (something a reconnect could fix)."""
+    if isinstance(exc, BackendConnectionError):
+        # raised by StdioSession when the ssh/stdio pipe broke (see request()/close()).
+        return True
+    if isinstance(exc, (BrokenPipeError, ConnectionError, EOFError)):
+        return True
+    if requests is not None and isinstance(
+        exc,
+        (requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.ChunkedEncodingError),
+    ):
+        # plain http(s) mode: connection reset/timeout while talking to the server.
+        return True
+    return False
+
+
+def with_reconnect(method=None, *, swallow_not_found=False):
+    """Decorator: if the wrapped method fails because the connection was lost, reconnect and retry.
+
+    This is only active while the backend is opened (has a session). Errors that are not connection
+    losses (e.g. ObjectNotFound, PermissionDenied) are passed through unchanged.
+
+    Usable both bare (``@with_reconnect``) and with arguments (``@with_reconnect(...)``).
+
+    swallow_not_found: only for idempotent removals (delete/move). The retry path is only reached
+    after a connection loss on an earlier attempt, so if that earlier attempt had already succeeded
+    (just the reply got lost), the retried operation raises ObjectNotFound. For delete/move that is
+    a spurious error - the desired end state is reached - so we swallow it and report success. On the
+    very first attempt ObjectNotFound is a real result and still propagates.
+    """
+    if method is None:
+        return functools.partial(with_reconnect, swallow_not_found=swallow_not_found)
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        try:
+            return method(self, *args, **kwargs)
+        except Exception as exc:
+            if not (self.session is not None and _is_connection_lost(exc)):
+                raise
+            logger.warning("rest: connection lost (%r), trying to reconnect...", exc)
+        last_exc: Optional[BaseException] = None
+        for attempt in range(1, self.reconnect_tries + 1):
+            time.sleep(self.reconnect_wait)
+            try:
+                self._reconnect()
+            except Exception as exc:
+                last_exc = exc
+                if not _is_connection_lost(exc):
+                    raise
+                logger.warning("rest: reconnect attempt %d/%d failed: %r", attempt, self.reconnect_tries, exc)
+                continue
+            try:
+                result = method(self, *args, **kwargs)
+            except ObjectNotFound:
+                if not swallow_not_found:
+                    raise
+                # an earlier attempt (before the connection loss) most likely already did it.
+                logger.info("rest: reconnected (attempt %d); object already gone, treating as success.", attempt)
+                return None
+            except Exception as exc:
+                last_exc = exc
+                if not _is_connection_lost(exc):
+                    raise
+                logger.warning(
+                    "rest: retry after reconnect (attempt %d/%d) failed: %r", attempt, self.reconnect_tries, exc
+                )
+                continue
+            logger.info("rest: reconnected successfully (attempt %d).", attempt)
+            return result
+        raise BackendError(f"rest connection was lost and could not be reestablished: {last_exc!r}")
+
+    return wrapper
 
 
 class StdioSession:
@@ -134,18 +222,25 @@ class StdioSession:
 
         request_line = f"{prepared.method} {prepared.path_url} HTTP/1.1\r\n"
         header_lines = "".join(f"{k}: {v}\r\n" for k, v in prepared.headers.items())
-        self.process.stdin.write((request_line + header_lines + "\r\n").encode("ascii"))
-        if body:
-            self.process.stdin.write(body)
-        self.process.stdin.flush()
+        try:
+            self.process.stdin.write((request_line + header_lines + "\r\n").encode("ascii"))
+            if body:
+                self.process.stdin.write(body)
+            self.process.stdin.flush()
+        except (BrokenPipeError, OSError) as e:
+            # the stdio pipe broke while sending, i.e. the ssh/server process is gone.
+            raise BackendConnectionError(f"stdio connection lost while sending request: {e}") from e
 
         line = self.process.stdout.readline()
         if not line:
+            # EOF: the ssh/server process closed the pipe. With ssh keepalive this is also how a
+            # dead network connection surfaces (ssh notices the dead peer and exits). Treat it as a
+            # (recoverable) connection loss rather than a plain backend error.
             if self._stderr_thread is not None:
                 self._stderr_thread.join(timeout=0.5)
             stderr_tail = "\n".join(self._stderr_lines)
             detail = f":\n{stderr_tail}" if stderr_tail else ""
-            raise BackendError(f"stdio server closed connection unexpectedly{detail}")
+            raise BackendConnectionError(f"stdio server closed connection unexpectedly{detail}")
         status_line = line.decode("iso-8859-1").strip()
         parts = status_line.split(" ", 2)
         if len(parts) < 2:
@@ -181,9 +276,13 @@ def ssh_cmd(user, host, port):
     """return an ssh command line that can be prefixed to another command line"""
     rsh = os.environ.get("BORGSTORE_RSH")
     if rsh:
+        # a custom remote shell is used verbatim - the user is in control of its options
+        # (including any keepalive), so we do not add anything here.
         args = shlex.split(rsh)
     else:
         args = ["ssh"]
+        # keepalive: make ssh terminate on a dead peer instead of letting our stdio reads hang forever.
+        args += ["-o", f"ServerAliveInterval={SSH_ALIVE_INTERVAL}", "-o", f"ServerAliveCountMax={SSH_ALIVE_COUNT_MAX}"]
         if port:
             args += ["-p", str(port)]
     args += [f"{user}@{host}"] if user else [host]
@@ -272,6 +371,8 @@ class REST(BackendBase):
         headers: Optional[Dict[str, str]] = None,
         timeout: Optional[int] = 30,
         command=None,
+        reconnect_tries: int = DEFAULT_RECONNECT_TRIES,
+        reconnect_wait: float = DEFAULT_RECONNECT_WAIT,
     ):
         self.base_url = base_url.rstrip("/")  # _url method adds slash
         self.headers = headers or {}
@@ -279,6 +380,8 @@ class REST(BackendBase):
         self.timeout = timeout
         self.auth = HTTPBasicAuth(username, password) if username and password else None
         self.command = command
+        self.reconnect_tries = reconnect_tries
+        self.reconnect_wait = reconnect_wait
         self.session = None
 
     def _url(self, path: str) -> str:
@@ -360,18 +463,38 @@ class REST(BackendBase):
         self.session.close()
         self.session = None
 
+    def _reconnect(self):
+        """Drop a (likely broken) session and establish a fresh, working one.
+
+        For stdio mode this restarts the ssh + borgstore-server-rest process; for plain http(s) mode
+        it creates a new requests.Session. The server holds no cross-request state, so redoing the
+        failed request against the fresh session is safe.
+        """
+        try:
+            if self.session is not None:
+                self.session.close()
+        except Exception:
+            # closing a already-broken session may itself raise (e.g. nonzero ssh exit) - ignore it,
+            # we only care about getting a clean, fresh session below.
+            pass
+        self.session = None
+        self.open()
+
+    @with_reconnect
     def mkdir(self, name: str) -> None:
         self._assert_open()
         validate_name(name)
         response = self._request("post", self._url(name), params={"cmd": "mkdir"})
         self._handle_response(response, name)
 
+    @with_reconnect
     def rmdir(self, name: str) -> None:
         self._assert_open()
         validate_name(name)
         response = self._request("delete", self._url(name), params={"cmd": "rmdir"})
         self._handle_response(response, name)
 
+    @with_reconnect
     def info(self, name: str) -> ItemInfo:
         self._assert_open()
         validate_name(name)
@@ -384,6 +507,7 @@ class REST(BackendBase):
         size = int(response.headers.get("Content-Length", 0)) if exists else 0
         return ItemInfo(name=name, exists=exists, size=size, directory=is_dir, atime=atime)
 
+    @with_reconnect
     def load(self, name: str, *, size=None, offset=0) -> bytes:
         self._assert_open()
         validate_name(name)
@@ -410,6 +534,7 @@ class REST(BackendBase):
             content = content[:size]
         return content
 
+    @with_reconnect
     def store(self, name: str, value: bytes) -> None:
         self._assert_open()
         validate_name(name)
@@ -418,12 +543,14 @@ class REST(BackendBase):
         response = self._request("post", self._url(name), data=value, headers=headers)
         self._handle_response(response, name)
 
+    @with_reconnect(swallow_not_found=True)
     def delete(self, name: str) -> None:
         self._assert_open()
         validate_name(name)
         response = self._request("delete", self._url(name))
         self._handle_response(response, name)
 
+    @with_reconnect(swallow_not_found=True)
     def move(self, curr_name: str, new_name: str) -> None:
         self._assert_open()
         validate_name(curr_name)
@@ -431,6 +558,7 @@ class REST(BackendBase):
         response = self._request("post", self._url(""), params={"cmd": "move", "current": curr_name, "new": new_name})
         self._handle_response(response, f"{curr_name} -> {new_name}")
 
+    @with_reconnect
     def defrag(self, sources, *, target=None, algorithm=None, namespace=None, levels=0) -> str:
         self._assert_open()
         params = {"cmd": "defrag"}
@@ -447,12 +575,14 @@ class REST(BackendBase):
         self._handle_response(response, "defrag")
         return response.text
 
+    @with_reconnect
     def quota(self) -> dict:
         self._assert_open()
         response = self._request("post", self._url(""), params={"cmd": "quota"})
         self._handle_response(response, "quota")
         return response.json()
 
+    @with_reconnect
     def hash(self, name: str, algorithm: str = "sha256") -> str:
         self._assert_open()
         validate_name(name)
@@ -460,12 +590,19 @@ class REST(BackendBase):
         self._handle_response(response, name)
         return response.text
 
-    def list(self, name: str) -> Iterator[ItemInfo]:
+    @with_reconnect
+    def _list_entries(self, name: str) -> list:
+        # separate, decorated helper because .list() is a generator: connection errors would be
+        # raised while iterating, i.e. outside the reconnect wrapper. Doing the request (and fully
+        # materializing the json) here means the (retryable) network access happens inside with_reconnect.
         self._assert_open()
         validate_name(name)
         response = self._request("get", self._url(name) + "/")  # trailing "/" needed to get list
         self._handle_response(response, name)
-        for entry in response.json():
+        return response.json()
+
+    def list(self, name: str) -> Iterator[ItemInfo]:
+        for entry in self._list_entries(name):
             yield ItemInfo(
                 name=entry["name"],
                 exists=True,
