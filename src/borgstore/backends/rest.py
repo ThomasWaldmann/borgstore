@@ -28,7 +28,7 @@ except ImportError:
     pass
 
 from ._base import BackendBase, ItemInfo, validate_name
-from ._utils import make_range_header
+from ._utils import make_range_header, ignore_sigint
 from .errors import (
     ObjectNotFound,
     BackendAlreadyExists,
@@ -65,7 +65,11 @@ class StdioSession:
         if self.process is not None:
             return
         self.process = subprocess.Popen(
-            self.command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            self.command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            preexec_fn=ignore_sigint,
         )
         self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
         self._stderr_thread.start()

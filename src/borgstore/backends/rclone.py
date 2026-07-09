@@ -17,7 +17,7 @@ except ImportError:
     requests = None
 
 from ._base import BackendBase, ItemInfo, validate_name
-from ._utils import make_range_header
+from ._utils import make_range_header, ignore_sigint
 from .errors import (
     BackendError,
     BackendDoesNotExist,
@@ -131,7 +131,12 @@ class Rclone(BackendBase):
             env = os.environ.copy()
             env["RCLONE_RC_PASS"] = self.password  # pass password by env var so it isn't in process list
             self.process = subprocess.Popen(
-                args, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stdin=subprocess.DEVNULL, env=env
+                args,
+                stderr=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                env=env,
+                preexec_fn=ignore_sigint,
             )
             self.url = f"http://{self.HOST}:{port}/"
             # Wait for rclone to start up
