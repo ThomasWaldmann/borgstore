@@ -10,6 +10,8 @@ Fixes:
   command now uses keepalive (ServerAliveInterval/CountMax) so a dead peer is noticed, and on a
   broken connection the client transparently restarts the ssh + server process and retries the
   request (giving up with a BackendError if it can't be reestablished), #167
+- rest (stdio-over-ssh): raise BackendConnectionError on unexpected EOF during response headers
+  or response body transfer, preventing silent data truncation.
 
 
 Version 0.5.4 (2026-07-09)
