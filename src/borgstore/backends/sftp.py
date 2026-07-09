@@ -78,12 +78,22 @@ def _is_connection_lost(exc: BaseException) -> bool:
     return False
 
 
-def with_reconnect(method):
+def with_reconnect(method=None, *, swallow_not_found=False):
     """Decorator: if the wrapped method fails because the connection was lost, reconnect and retry.
 
     This is only active while the backend is opened. Errors that are not connection losses
     (e.g. ObjectNotFound, FileNotFoundError, PermissionError) are passed through unchanged.
+
+    Usable both bare (``@with_reconnect``) and with arguments (``@with_reconnect(...)``).
+
+    swallow_not_found: only for idempotent removals (delete/move). The retry path is only reached
+    after a connection loss on an earlier attempt, so if that earlier attempt had already succeeded
+    (just the reply got lost), the retried operation raises ObjectNotFound. For delete/move that is
+    a spurious error - the desired end state (object gone / moved) is reached - so we swallow it and
+    report success. On the very first attempt ObjectNotFound is a real result and still propagates.
     """
+    if method is None:
+        return functools.partial(with_reconnect, swallow_not_found=swallow_not_found)
 
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
@@ -106,6 +116,12 @@ def with_reconnect(method):
                 continue
             try:
                 result = method(self, *args, **kwargs)
+            except ObjectNotFound:
+                if not swallow_not_found:
+                    raise
+                # an earlier attempt (before the connection loss) most likely already did it.
+                logger.info("sftp: reconnected (attempt %d); object already gone, treating as success.", attempt)
+                return None
             except Exception as exc:
                 last_exc = exc
                 if not _is_connection_lost(exc):
@@ -441,7 +457,7 @@ class Sftp(BackendBase):
             self.client.unlink(tmp_name)
             raise
 
-    @with_reconnect
+    @with_reconnect(swallow_not_found=True)
     def delete(self, name):
         if not self.opened:
             raise BackendMustBeOpen()
@@ -476,7 +492,7 @@ class Sftp(BackendBase):
             return hexdigest
         return super().hash(name, algorithm=algorithm)
 
-    @with_reconnect
+    @with_reconnect(swallow_not_found=True)
     def move(self, curr_name, new_name):
         def _rename_to_new_name():
             self.client.posix_rename(curr_name, new_name)

@@ -92,6 +92,52 @@ def test_gives_up_after_all_tries():
     assert obj.reconnects == 3
 
 
+def test_swallow_not_found_on_retry():
+    """delete/move: ObjectNotFound after a reconnect means the earlier attempt already did it."""
+    obj = FakeSftp()
+    calls = {"n": 0}
+
+    @with_reconnect(swallow_not_found=True)
+    def op(self):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise socket.timeout()  # connection died (the op may already have succeeded)
+        raise ObjectNotFound("gone")  # retry: object is already gone -> treat as success
+
+    assert op(obj) is None
+    assert obj.reconnects == 1
+
+
+def test_object_not_found_propagates_on_first_attempt_even_when_swallowing():
+    """A genuine ObjectNotFound (no connection loss) must still propagate."""
+    obj = FakeSftp()
+
+    @with_reconnect(swallow_not_found=True)
+    def op(self):
+        raise ObjectNotFound("gone")
+
+    with pytest.raises(ObjectNotFound):
+        op(obj)
+    assert obj.reconnects == 0
+
+
+def test_object_not_found_on_retry_propagates_without_swallow():
+    """Without swallow_not_found, ObjectNotFound on the retry path propagates as-is."""
+    obj = FakeSftp()
+    calls = {"n": 0}
+
+    @with_reconnect
+    def op(self):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise socket.timeout()
+        raise ObjectNotFound("gone")
+
+    with pytest.raises(ObjectNotFound):
+        op(obj)
+    assert obj.reconnects == 1
+
+
 def test_not_opened_does_not_reconnect():
     obj = FakeSftp()
     obj.opened = False
