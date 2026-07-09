@@ -251,7 +251,15 @@ class StdioSession:
         response_headers = requests.structures.CaseInsensitiveDict()
         while True:
             line = self.process.stdout.readline()
-            if line in (b"\r\n", b"\n", b""):
+            if not line:
+                if self._stderr_thread is not None:
+                    self._stderr_thread.join(timeout=0.5)
+                stderr_tail = "\n".join(self._stderr_lines)
+                detail = f":\n{stderr_tail}" if stderr_tail else ""
+                raise BackendConnectionError(
+                    f"stdio server closed connection unexpectedly while reading headers{detail}"
+                )
+            if line in (b"\r\n", b"\n"):
                 break
             header_line = line.decode("iso-8859-1").strip()
             if ":" in header_line:
