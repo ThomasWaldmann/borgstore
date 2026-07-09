@@ -6,6 +6,9 @@ Version 0.5.4 (not released yet)
 
 Fixes:
 
+- sftp: recover from a lost connection instead of hanging forever. Operations now use a
+  socket timeout and, on a broken/dead connection, transparently reconnect and retry (and
+  give up with a BackendError if the connection can't be reestablished), #167
 - Spawn rclone and ssh ignoring SIGINT, so they don't get interrupted by Ctrl-C.
 
 
