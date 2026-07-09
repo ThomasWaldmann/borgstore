@@ -12,6 +12,9 @@ Fixes:
   request (giving up with a BackendError if it can't be reestablished), #167
 - rest (stdio-over-ssh): raise BackendConnectionError on unexpected EOF during response headers
   or response body transfer, preventing silent data truncation.
+- defrag: check for short/long reads in range requests and raise ReadRangeError exception in
+  case of a size mismatch, #194
+
 
 
 Version 0.5.4 (2026-07-09)
